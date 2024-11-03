@@ -12,10 +12,22 @@ import java.io.InputStreamReader
 import java.awt.Font
 import java.util.Locale
 import javax.swing.JPanel
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONObject
 
 class WeatherToolWindow {
 
     private val panel = JBPanel<JBPanel<*>>(BorderLayout())
+
+    private val client = OkHttpClient()
+
+    // I know hard coding my api key is dumb, but I wanted to give you a chance to try it out without generating an api key yourself. :/
+    // You can use my api key, but if you have your own, please use your own. I will deactivate this key in 3-4 weeks.
+    private val apiKey =
+        "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"
 
     init {
         val textArea = JTextArea(20, 50)
@@ -39,10 +51,11 @@ class WeatherToolWindow {
                     // Extract the weather after the location to generate the mood text
                     val weatherCondition = extractWeatherCondition(output)
 
-                    val mood = analyzeWeatherMood(weatherCondition)
+                    // Generate AI Mood Interpretation using LLM
+                    val mood = getLLMGeneratedMood(weatherCondition)
 
                     ApplicationManager.getApplication().invokeLater {
-                        textArea.text = "$output\n\nMood for today:\n$mood"
+                        textArea.text = "$output\n\nMood for today:\n\n$mood"
                     }
                 } catch (e: Exception) {
                     ApplicationManager.getApplication().invokeLater {
@@ -73,37 +86,46 @@ class WeatherToolWindow {
         return matchResult?.groupValues?.get(1)?.lowercase(Locale.getDefault()) ?: "unknown"
     }
 
-    // Simple function to analyze the weather and generate a mood text. Disclaimer: These texts are generated with ChatGPT
-    // TODO: make it random
-    private fun analyzeWeatherMood(weatherCondition: String): String {
-        return when (weatherCondition) {
-            "sunny" -> {
-                "The sun is shining bright! It's a great day for outdoor activities. Go enjoy some sunshine!"
-            }
+    // Function to generate a meme based mood interpretation based on the below prompt.
+    // It will generate different messages everytime you reset and run the plugin or click Get Weather button on the plugin.
+    // Source guides: https://platform.openai.com/docs/guides/text-generation?text-generation-quickstart-example=text
+    // Source guides: https://platform.openai.com/docs/api-reference/making-requests
+    private fun getLLMGeneratedMood(weatherCondition: String): String {
+        val prompt =
+            "The current weather is $weatherCondition. Generate a meme like mood interpretation based on this weather condition in one short sentence."
 
-            "rain" -> {
-                "Rainy and cozy! Perfect weather to grab a warm drink and enjoy a good book."
-            }
+        val requestBody = JSONObject()
+            .put("model", "gpt-4o-mini")
+            .put(
+                "messages", listOf(
+                    JSONObject().put("role", "user").put("content", prompt)
+                )
+            )
+            .put("temperature", 0.7)
+            .toString()
+            .toRequestBody("application/json".toMediaTypeOrNull())
 
-            "cloudy" -> {
-                "It's a bit cloudy today. Maybe a good day to stay in and work on a hobby."
-            }
+        val request = Request.Builder()
+            .url("https://api.openai.com/v1/chat/completions")
+            .addHeader("Authorization", "Bearer $apiKey")
+            .post(requestBody)
+            .build()
 
-            "snow" -> {
-                "Snowy and beautiful! Time to get warm and cozy or maybe build a snowman if you’re feeling adventurous!"
-            }
+        return try {
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) throw Exception("Unexpected code $response")
 
-            "clear" -> {
-                "Clear skies! Looks like a perfect time for a stroll and some fresh air."
+                val responseBody = response.body?.string() ?: ""
+                val jsonResponse = JSONObject(responseBody)
+                val choices = jsonResponse.getJSONArray("choices")
+                if (choices.length() > 0) {
+                    choices.getJSONObject(0).getJSONObject("message").getString("content").trim()
+                } else {
+                    "Failed to generate mood interpretation."
+                }
             }
-
-            "fog" -> {
-                "Foggy weather! Mysterious and calm, maybe take it slow and enjoy the stillness."
-            }
-
-            else -> {
-                "The weather looks interesting today! Make the best out of it, no matter what it brings!"
-            }
+        } catch (e: Exception) {
+            "Failed to generate: ${e.message}"
         }
     }
 }
