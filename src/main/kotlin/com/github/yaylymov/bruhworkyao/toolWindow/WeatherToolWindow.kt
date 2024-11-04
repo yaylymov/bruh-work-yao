@@ -26,8 +26,7 @@ class WeatherToolWindow {
 
     // I know hard coding my api key is dumb, but I wanted to give you a chance to try it out without generating an api key yourself. :/
     // You can use my api key, but if you have your own, please use your own. I will deactivate this key in 3-4 weeks.
-    private val apiKey =
-        "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"
+    private val apiKey = "your-api-key"
 
     init {
         val textArea = JTextArea(20, 50)
